@@ -16,6 +16,7 @@ use std::fmt::{self, Display};
 mod parse_relative_time;
 mod parse_timestamp;
 
+mod parse_coreutils;
 mod parse_time_only_str;
 mod parse_weekday;
 
@@ -239,6 +240,11 @@ pub fn parse_datetime_at_date<S: AsRef<str> + Clone>(
     // parse time only dates
     if let Some(date_time) = parse_time_only_str::parse_time_only(date, s.as_ref()) {
         return Ok(date_time);
+    }
+
+    // parse coreutils edge cases
+    if let Ok(date_time) = parse_coreutils::parse(date, s.as_ref()) {
+        return Ok(date_time.into());
     }
 
     // Default parse and failure
@@ -498,6 +504,40 @@ mod tests {
                 .unwrap()
                 .timestamp();
             assert_eq!(parsed_time, 1709480070)
+        }
+    }
+    #[cfg(test)]
+    mod coreutils_compat {
+        use crate::parse_coreutils;
+        use chrono::{DateTime, Local, TimeZone};
+        use std::env;
+
+        fn test_eq(test_date: DateTime<Local>, s: &str, expect: &str) {
+            let parsed_time = parse_coreutils::parse(test_date, s)
+                .map_err(|_| "invalid date")
+                .unwrap();
+            assert_eq!(parsed_time.format("%+").to_string(), expect,)
+        }
+
+        #[test]
+        fn test_coreutils_compat() {
+            env::set_var("TZ", "UTC");
+            let test_date = Local.with_ymd_and_hms(2024, 3, 3, 0, 0, 0).unwrap();
+            test_eq(
+                test_date,
+                "2005-01-01 +351 day",
+                "2005-12-18T00:00:00+00:00",
+            );
+
+            test_eq(
+                test_date,
+                "Jul 18 06:14:49 2024 GMT",
+                "2024-07-18T06:14:49+00:00",
+            );
+
+            test_eq(test_date, "11111111", "2024-11-11T11:11:00+00:00");
+
+            test_eq(test_date, "@1690466034", "2023-07-27T13:53:54+00:00");
         }
     }
     /// Used to test example code presented in the README.
